@@ -42,7 +42,7 @@
             color: #34495e;
         }
 
-        input[type="date"] {
+        input[type="date"], select {
             padding: 5px 10px;
             font-size: 1em;
             border: 1px solid #dfe6e9;
@@ -89,32 +89,6 @@
             color: #2c3e50;
             margin-bottom: 10px;
         }
-
-        .table-container {
-            margin: 20px 0;
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            max-width: 800px;
-            overflow-x: auto;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        th, td {
-            padding: 10px;
-            border: 1px solid #ddd;
-            text-align: center;
-        }
-        
-        th {
-            background-color: #3498db;
-            color: white;
-        }
     </style>
 </head>
 <body>
@@ -129,21 +103,33 @@
     <button onclick="updateCharts()">グラフを更新</button>
 </div>
 
-<div class="chart-container">
-    <div class="chart-title">ヒートマップ</div>
-    <div class="chart" id="heatmap"></div>
-    <div class="chart-title">度数分布図</div>
-    <div class="chart" id="frequencyChart"></div>
+<div class="controls">
+    <label for="venueSelect">会場を選択:</label>
+    <select id="venueSelect" onchange="updateVenueCharts()">
+        <option value="">-- 会場を選択 --</option>
+    </select>
 </div>
 
-<div class="table-container">
-    <h2>会場ごとの度数分布表</h2>
-    <table id="venueTable"></table>
+<div class="chart-container">
+    <div class="chart" id="heatmap">
+        <div class="chart-title">ヒートマップ</div>
+    </div>
+    <div class="chart" id="frequencyChart">
+        <div class="chart-title">度数分布図</div>
+    </div>
+    <div class="chart" id="venueHeatmap">
+        <div class="chart-title">選択した会場のヒートマップ</div>
+    </div>
+    <div class="chart" id="venueChart">
+        <div class="chart-title">選択した会場の度数分布図</div>
+    </div>
 </div>
 
 <script>
 // CSVデータを読み込み、日付範囲に応じてヒートマップと度数分布図を更新する
 let allData = []; // すべてのデータを保持
+let venueSongCounts = {}; // 会場ごとの楽曲度数を保持
+let venuePairCounts = {}; // 会場ごとの曲ペア度数を保持
 
 fetch('setlist_0912_1111.csv')
     .then(response => {
@@ -182,27 +168,40 @@ function updateCharts() {
         return;
     }
     processData(filteredData);
-    generateVenueTable(filteredData);  // 会場ごとの度数分布表を生成
+    populateVenueDropdown(filteredData); // ドロップダウンを更新
 }
 
 // データを処理してヒートマップと度数分布図を作成する関数
 function processData(data) {
     const pairCounts = {};
     const songCounts = {};
+    venueSongCounts = {}; // 初期化
+    venuePairCounts = {}; // 初期化
 
     data.forEach(row => {
-        const songs = Object.values(row).slice(2).filter(Boolean); // 日付と会場を除く曲名を取得
+        const venue = row["Venue"];
+        const songs = Object.values(row).slice(2).filter(Boolean);
+
+        // 会場ごとの楽曲カウント
+        if (!venueSongCounts[venue]) {
+            venueSongCounts[venue] = {};
+            venuePairCounts[venue] = {};
+        }
         songs.forEach(song => {
             if (song !== "MC" && song !== "_END") {
                 songCounts[song] = (songCounts[song] || 0) + 1;
+                venueSongCounts[venue][song] = (venueSongCounts[venue][song] || 0) + 1;
             }
         });
+
         for (let i = 0; i < songs.length - 1; i++) {
             const pair = `${songs[i]}-${songs[i + 1]}`;
             pairCounts[pair] = (pairCounts[pair] || 0) + 1;
+            venuePairCounts[venue][pair] = (venuePairCounts[venue][pair] || 0) + 1;
         }
     });
 
+    // ヒートマップと度数分布図を生成
     const songsSet = new Set(Object.keys(songCounts));
     Object.keys(pairCounts).forEach(pair => {
         const [song1, song2] = pair.split("-");
@@ -262,63 +261,86 @@ function processData(data) {
     }
 }
 
-// 会場ごとの度数分布表を生成する関数
-function generateVenueTable(data) {
-    const venueSongCounts = {};
+// 会場のプルダウンメニューを更新
+function populateVenueDropdown(data) {
+    const venueSelect = document.getElementById("venueSelect");
+    venueSelect.innerHTML = '<option value="">-- 会場を選択 --</option>'; // 初期化
 
-    // 会場ごとに曲の度数をカウント
-    data.forEach(row => {
-        const venue = row['Venue'];
-        const songs = Object.values(row).slice(2).filter(song => song && song !== "MC" && song !== "_END");
+    // 会場リストを一意に取得してプルダウンに追加
+    const venues = [...new Set(data.map(row => row["Venue"]))].sort();
+    venues.forEach(venue => {
+        const option = document.createElement("option");
+        option.value = venue;
+        option.textContent = venue;
+        venueSelect.appendChild(option);
+    });
+}
 
-        if (!venueSongCounts[venue]) {
-            venueSongCounts[venue] = {};
+// 選択した会場の度数分布図とヒートマップを更新
+function updateVenueCharts() {
+    const venueSelect = document.getElementById("venueSelect");
+    const selectedVenue = venueSelect.value;
+
+    if (selectedVenue && venueSongCounts[selectedVenue]) {
+        // 会場ごとの度数分布図を生成
+        const songCounts = venueSongCounts[selectedVenue];
+        const songs = Object.keys(songCounts);
+        const counts = Object.values(songCounts);
+
+        const venueData = [{
+            x: songs,
+            y: counts,
+            type: 'bar',
+            marker: { color: 'lightcoral' }
+        }];
+
+        const venueLayout = {
+            title: `${selectedVenue} の度数分布図`,
+            xaxis: { title: '曲名', tickangle: -45 },
+            yaxis: { title: '登場回数' }
+        };
+
+        Plotly.newPlot('venueChart', venueData, venueLayout);
+
+        // 会場ごとのヒートマップを生成
+        const pairCounts = venuePairCounts[selectedVenue];
+        const allSongs = Array.from(new Set(Object.keys(songCounts)));
+        const venueValues = allSongs.map(song1 => allSongs.map(song2 => {
+            const pair = `${song1}-${song2}`;
+            return pairCounts[pair] || 0;
+        }));
+
+        if (!venueValues.flat().every(val => val === 0)) {
+            const venueHeatmapData = [{
+                z: venueValues,
+                x: allSongs,
+                y: allSongs,
+                type: 'heatmap',
+                colorscale: 'Viridis',
+                text: venueValues.map(row => row.map(val => val.toString())),
+                texttemplate: "%{text}",
+                textfont: { size: 12 },
+                showscale: true
+            }];
+            
+            const venueHeatmapLayout = {
+                title: `${selectedVenue} のヒートマップ`,
+                xaxis: { title: 'N+1 (次の曲)' },
+                yaxis: { title: 'N (現在の曲)' }
+            };
+            
+            Plotly.newPlot('venueHeatmap', venueHeatmapData, venueHeatmapLayout);
+        } else {
+            Plotly.purge('venueHeatmap');  // データがない場合はグラフをリセット
+            alert(`${selectedVenue} のヒートマップを生成するデータがありません`);
         }
-
-        songs.forEach(song => {
-            venueSongCounts[venue][song] = (venueSongCounts[venue][song] || 0) + 1;
-        });
-    });
-
-    // テーブルの構築
-    const table = document.getElementById('venueTable');
-    table.innerHTML = '';  // テーブルをクリア
-
-    // ヘッダー行の作成
-    const headerRow = document.createElement('tr');
-    const venueHeader = document.createElement('th');
-    venueHeader.textContent = '会場';
-    headerRow.appendChild(venueHeader);
-
-    const allSongs = new Set();
-    Object.values(venueSongCounts).forEach(songCounts => {
-        Object.keys(songCounts).forEach(song => allSongs.add(song));
-    });
-    const songList = Array.from(allSongs).sort();
-    songList.forEach(song => {
-        const th = document.createElement('th');
-        th.textContent = song;
-        headerRow.appendChild(th);
-    });
-    table.appendChild(headerRow);
-
-    // 各会場の行を作成
-    Object.entries(venueSongCounts).forEach(([venue, songCounts]) => {
-        const row = document.createElement('tr');
-        const venueCell = document.createElement('td');
-        venueCell.textContent = venue;
-        row.appendChild(venueCell);
-
-        songList.forEach(song => {
-            const cell = document.createElement('td');
-            cell.textContent = songCounts[song] || 0;
-            row.appendChild(cell);
-        });
-
-        table.appendChild(row);
-    });
+    } else {
+        Plotly.purge('venueChart');  // 選択がない場合は度数分布図をリセット
+        Plotly.purge('venueHeatmap');  // 選択がない場合はヒートマップをリセット
+    }
 }
 </script>
 
 </body>
 </html>
+
