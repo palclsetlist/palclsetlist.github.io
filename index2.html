@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パルクラ楽曲のヒートマップと度数分布図</title>
+    <!-- d3.jsライブラリ -->
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <!-- Plotly.jsライブラリ -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        /* モダンなデザイン */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 20px;
+            font-size: 2em;
+            color: #2c3e50;
+        }
+
+        .controls {
+            margin: 20px;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+
+        label {
+            font-weight: bold;
+            margin: 0 5px;
+            color: #34495e;
+        }
+
+        input[type="date"] {
+            padding: 5px 10px;
+            font-size: 1em;
+            border: 1px solid #dfe6e9;
+            border-radius: 4px;
+            margin: 0 5px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .chart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 90%;
+            max-width: 1200px;
+            margin: 20px;
+        }
+
+        .chart {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-title {
+            font-size: 1.2em;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .table-container {
+            margin: 20px 0;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+<h1>パルクラ楽曲のヒートマップと度数分布図</h1>
+
+<div class="controls">
+    <label for="startDate">開始日:</label>
+    <input type="date" id="startDate">
+    <label for="endDate">終了日:</label>
+    <input type="date" id="endDate">
+    <button onclick="updateCharts()">グラフを更新</button>
+</div>
+
+<div class="chart-container">
+    <div class="chart" id="heatmap">
+        <div class="chart-title">ヒートマップ</div>
+    </div>
+    <div class="chart" id="frequencyChart">
+        <div class="chart-title">度数分布図</div>
+    </div>
+</div>
+
+<div class="table-container">
+    <h2>会場ごとの度数分布表</h2>
+    <table id="venueTable"></table>
+</div>
+
+<script>
+// CSVデータを読み込み、日付範囲に応じてヒートマップと度数分布図を更新する
+let allData = []; // すべてのデータを保持
+
+fetch('setlist_0912_1111.csv')
+    .then(response => {
+        if (!response.ok) throw new Error("CSVファイルの読み込みに失敗しました");
+        return response.text();
+    })
+    .then(csvText => {
+        allData = d3.csvParse(csvText, d => {
+            d.date = d.date.replace(/\//g, "-");  // yyyy/mm/dd を yyyy-mm-dd に変換
+            return d;
+        });
+        initializeDateRange(); // 日付範囲の初期化
+        updateCharts(); // 初回表示
+    })
+    .catch(error => console.error("エラー:", error));
+
+// 日付範囲の選択肢を初期化
+function initializeDateRange() {
+    const dates = allData.map(row => row["date"]).filter(Boolean);
+    const minDate = dates[0];
+    const maxDate = dates[dates.length - 1];
+    
+    document.getElementById("startDate").value = minDate;
+    document.getElementById("endDate").value = maxDate;
+}
+
+// グラフを更新する関数
+function updateCharts() {
+    const startDate = document.getElementById("startDate").value;
+    const endDate = document.getElementById("endDate").value;
+
+    // 指定された日付範囲内のデータを抽出
+    const filteredData = allData.filter(row => row["date"] >= startDate && row["date"] <= endDate);
+    if (filteredData.length === 0) {
+        alert("選択された日付範囲にデータがありません");
+        return;
+    }
+    processData(filteredData);
+    generateVenueTable(filteredData);  // 会場ごとの度数分布表を生成
+}
+
+// データを処理してヒートマップと度数分布図を作成する関数
+function processData(data) {
+    const pairCounts = {};
+    const songCounts = {};
+
+    data.forEach(row => {
+        const songs = Object.values(row).slice(2).filter(Boolean); // 日付と会場を除く曲名を取得
+        songs.forEach(song => {
+            if (song !== "MC" && song !== "_END") {
+                songCounts[song] = (songCounts[song] || 0) + 1;
+            }
+        });
+        for (let i = 0; i < songs.length - 1; i++) {
+            const pair = `${songs[i]}-${songs[i + 1]}`;
+            pairCounts[pair] = (pairCounts[pair] || 0) + 1;
+        }
+    });
+
+    const songsSet = new Set(Object.keys(songCounts));
+    Object.keys(pairCounts).forEach(pair => {
+        const [song1, song2] = pair.split("-");
+        songsSet.add(song1);
+        songsSet.add(song2);
+    });
+    const songs = Array.from(songsSet);
+
+    const values = songs.map(song1 => songs.map(song2 => {
+        const pair = `${song1}-${song2}`;
+        return pairCounts[pair] || 0;
+    }));
+
+    Plotly.purge('heatmap');
+    Plotly.purge('frequencyChart');
+
+    if (!values.flat().every(val => val === 0)) {
+        const heatmapData = [{
+            z: values,
+            x: songs,
+            y: songs,
+            type: 'heatmap',
+            colorscale: 'Viridis',
+            text: values.map(row => row.map(val => val.toString())),
+            texttemplate: "%{text}",
+            textfont: { size: 12 },
+            showscale: true
+        }];
+        const heatmapLayout = {
+            xaxis: { title: 'N+1 (次の曲)' },
+            yaxis: { title: 'N (現在の曲)' }
+        };
+        Plotly.newPlot('heatmap', heatmapData, heatmapLayout);
+    } else {
+        alert("ヒートマップを生成するデータがありません");
+    }
+
+    const filteredSongCounts = Object.keys(songCounts).filter(song => song !== "MC" && song !== "_END");
+    const filteredCounts = filteredSongCounts.map(song => songCounts[song]);
+
+    if (filteredCounts.some(val => val > 0)) {
+        const frequencyData = [{
+            x: filteredSongCounts,
+            y: filteredCounts,
+            type: 'bar',
+            marker: { color: 'skyblue' }
+        }];
+
+        const frequencyLayout = {
+            xaxis: { title: '曲名', tickangle: -45 },
+            yaxis: { title: '登場回数' }
+        };
+
+        Plotly.newPlot('frequencyChart', frequencyData, frequencyLayout);
+    } else {
+        alert("度数分布図を生成するデータがありません");
+    }
+}
+
+// 会場ごとの度数分布表を生成する関数
+function generateVenueTable(data) {
+    const venueSongCounts = {};
+
+    // 会場ごとに曲の度数をカウント
+    data.forEach(row => {
+        const venue = row['Venue'];
+        const songs = Object.values(row).slice(2).filter(song => song && song !== "MC" && song !== "_END");
+
+        if (!venueSongCounts[venue]) {
+            venueSongCounts[venue] = {};
+        }
+
+        songs.forEach(song => {
+            venueSongCounts[venue][song] = (venueSongCounts[venue][song] || 0) + 1;
+        });
+    });
+
+    // テーブルの構築
+    const table = document.getElementById('venueTable');
+    table.innerHTML = '';  // テーブルをクリア
+
+    // ヘッダー行の作成
+    const headerRow = document.createElement('tr');
+    const venueHeader = document.createElement('th');
+    venueHeader.textContent = '会場';
+    headerRow.appendChild(venueHeader);
+
+    const allSongs = new Set();
+    Object.values(venueSongCounts).forEach(songCounts => {
+        Object.keys(songCounts).forEach(song => allSongs.add(song));
+    });
+    const songList = Array.from(allSongs).sort();
+    songList.forEach(song => {
+        const th = document.createElement('th');
+        th.textContent = song;
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+
+    // 各会場の行を作成
+    Object.entries(venueSongCounts).forEach(([venue, songCounts]) => {
+        const row = document.createElement('tr');
+        const venueCell = document.createElement('td');
+        venueCell.textContent = venue;
+        row.appendChild(venueCell);
+
+        songList.forEach(song => {
+            const cell = document.createElement('td');
+            cell.textContent = songCounts[song] || 0;
+            row.appendChild(cell);
+        });
+
+        table.appendChild(row);
+    });
+}
+</script>
+
+</body>
+</html>
