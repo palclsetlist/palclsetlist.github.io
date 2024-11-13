@@ -163,7 +163,7 @@ function processData(data) {
     const songCounts = {};
 
     data.forEach(row => {
-        const songs = Object.values(row).slice(1).filter(Boolean);
+        const songs = Object.values(row).slice(2).filter(Boolean);
         songs.forEach(song => {
             if (song !== "MC" && song !== "_END") {
                 songCounts[song] = (songCounts[song] || 0) + 1;
