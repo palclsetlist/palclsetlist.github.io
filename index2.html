@@ -111,10 +111,10 @@
 </div>
 
 <div class="chart-container">
-    <div class="chart-title">ヒートマップ</div>
+    <!--div class="chart-title">ヒートマップ</div>
     <div class="chart" id="heatmap"></div>
     <div class="chart-title">度数分布図</div>
-    <div class="chart" id="frequencyChart"></div>
+    <div class="chart" id="frequencyChart"></div-->
     <div class="chart-title">選択した会場のヒートマップ</div>
     <div class="chart" id="venueHeatmap"></div>
     <div class="chart-title">選択した会場の度数分布図</div>
@@ -163,98 +163,7 @@ function updateCharts() {
         alert("選択された日付範囲にデータがありません");
         return;
     }
-    processData(filteredData);
     populateVenueDropdown(filteredData); // ドロップダウンを更新
-}
-
-// データを処理してヒートマップと度数分布図を作成する関数
-function processData(data) {
-    const pairCounts = {};
-    const songCounts = {};
-    venueSongCounts = {}; // 初期化
-    venuePairCounts = {}; // 初期化
-
-    data.forEach(row => {
-        const venue = row["Venue"];
-        const songs = Object.values(row).slice(2).filter(Boolean);
-
-        // 会場ごとの楽曲カウント
-        if (!venueSongCounts[venue]) {
-            venueSongCounts[venue] = {};
-            venuePairCounts[venue] = {};
-        }
-        songs.forEach(song => {
-            if (song !== "MC" && song !== "_END") {
-                songCounts[song] = (songCounts[song] || 0) + 1;
-                venueSongCounts[venue][song] = (venueSongCounts[venue][song] || 0) + 1;
-            }
-        });
-
-        for (let i = 0; i < songs.length - 1; i++) {
-            const pair = `${songs[i]}-${songs[i + 1]}`;
-            pairCounts[pair] = (pairCounts[pair] || 0) + 1;
-            venuePairCounts[venue][pair] = (venuePairCounts[venue][pair] || 0) + 1;
-        }
-    });
-
-    // ヒートマップと度数分布図を生成
-    const songsSet = new Set(Object.keys(songCounts));
-    Object.keys(pairCounts).forEach(pair => {
-        const [song1, song2] = pair.split("-");
-        songsSet.add(song1);
-        songsSet.add(song2);
-    });
-    const songs = Array.from(songsSet);
-
-    const values = songs.map(song1 => songs.map(song2 => {
-        const pair = `${song1}-${song2}`;
-        return pairCounts[pair] || 0;
-    }));
-
-    Plotly.purge('heatmap');
-    Plotly.purge('frequencyChart');
-
-    if (!values.flat().every(val => val === 0)) {
-        const heatmapData = [{
-            z: values,
-            x: songs,
-            y: songs,
-            type: 'heatmap',
-            colorscale: 'Viridis',
-            text: values.map(row => row.map(val => val.toString())),
-            texttemplate: "%{text}",
-            textfont: { size: 12 },
-            showscale: true
-        }];
-        const heatmapLayout = {
-            xaxis: { title: 'N+1 (次の曲)' },
-            yaxis: { title: 'N (現在の曲)' }
-        };
-        Plotly.newPlot('heatmap', heatmapData, heatmapLayout);
-    } else {
-        alert("ヒートマップを生成するデータがありません");
-    }
-
-    const filteredSongCounts = Object.keys(songCounts).filter(song => song !== "MC" && song !== "_END");
-    const filteredCounts = filteredSongCounts.map(song => songCounts[song]);
-
-    if (filteredCounts.some(val => val > 0)) {
-        const frequencyData = [{
-            x: filteredSongCounts,
-            y: filteredCounts,
-            type: 'bar',
-            marker: { color: 'skyblue' }
-        }];
-
-        const frequencyLayout = {
-            xaxis: { title: '曲名', tickangle: -45 },
-            yaxis: { title: '登場回数' }
-        };
-
-        Plotly.newPlot('frequencyChart', frequencyData, frequencyLayout);
-    } else {
-        alert("度数分布図を生成するデータがありません");
-    }
 }
 
 // 会場のプルダウンメニューを更新
