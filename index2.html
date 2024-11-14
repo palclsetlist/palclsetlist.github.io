@@ -127,7 +127,7 @@ let allData = []; // すべてのデータを保持
 let venueSongCounts = {}; // 会場ごとの楽曲度数を保持
 let venuePairCounts = {}; // 会場ごとの曲ペア度数を保持
 
-fetch('setlist_0912_1111.csv')
+fetch('setlist_latest.csv')
     .then(response => {
         if (!response.ok) throw new Error("CSVファイルの読み込みに失敗しました");
         return response.text();
