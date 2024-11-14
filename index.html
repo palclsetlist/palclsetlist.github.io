@@ -118,7 +118,7 @@
 // CSVデータを読み込み、日付範囲に応じてヒートマップと度数分布図を更新する
 let allData = []; // すべてのデータを保持
 
-fetch('setlist_0912_1111.csv')
+fetch('setlist_latest.csv')
     .then(response => {
         if (!response.ok) throw new Error("CSVファイルの読み込みに失敗しました");
         return response.text();
